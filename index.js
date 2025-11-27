@@ -1,23 +1,23 @@
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const express = require('express');
 const pino = require('pino');
-const qrcode = require('qrcode-terminal'); // Adicionado para garantir o QR
+const qrcode = require('qrcode-terminal'); // Importante para desenhar o QR Code
 
 const app = express();
 app.use(express.json());
 
-// O Render define a porta automaticamente, ou usa a 3000
+// O Render define a porta automaticamente
 const PORT = process.env.PORT || 3000;
 
 let sock;
 
 async function connectToWhatsApp() {
-    // Cria pasta de autenticação
+    // Salva a sessão na pasta 'auth_info'
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     
     sock = makeWASocket({
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, // Desativamos o nativo que estava dando erro
+        printQRInTerminal: false, // Desligamos o nativo que estava falhando
         auth: state
     });
 
@@ -26,10 +26,11 @@ async function connectToWhatsApp() {
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
+        // AQUI ESTÁ A MÁGICA: Se tiver QR Code, desenha ele na marra!
         if(qr) {
-            // AQUI ESTÁ A CORREÇÃO: Gerar o QR manualmente
-            console.log("\n\nSCANEAR O QR CODE ABAIXO:\n");
+            console.log("\n\n>>> ESCANEIE O QR CODE ABAIXO RAPIDAMENTE: <<<\n");
             qrcode.generate(qr, { small: true });
+            console.log("\n====================================================\n");
         }
 
         if (connection === 'close') {
@@ -37,12 +38,12 @@ async function connectToWhatsApp() {
             console.log('Conexão caiu. Reconectando...', shouldReconnect);
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
-            console.log('✅ BOT CONECTADO COM SUCESSO!');
+            console.log('✅ SUCESSO: BOT CONECTADO E PRONTO PARA COBRAR!');
         }
     });
 }
 
-// Rota para o UnyFlick enviar mensagem
+// Rota que o UnyFlick vai chamar
 app.post('/enviar', async (req, res) => {
     const { numero, mensagem } = req.body;
     
@@ -51,12 +52,10 @@ app.post('/enviar', async (req, res) => {
     }
 
     try {
-        // Formata número para padrão internacional (55 + DDD + numero)
+        // Formata o número (55 + DDD + numero)
         const id = '55' + numero.replace(/\D/g, '') + '@s.whatsapp.net';
         
-        // Envia a mensagem
         await sock.sendMessage(id, { text: mensagem });
-        
         console.log(`Mensagem enviada para ${numero}`);
         res.json({ status: 'Enviado com sucesso' });
     } catch (e) {
@@ -65,10 +64,10 @@ app.post('/enviar', async (req, res) => {
     }
 });
 
-// Rota de Saúde (Ping) para manter acordado
+// Rota para manter o bot acordado
 app.get('/', (req, res) => res.send('🤖 Bot UnyFlick Online e Pronto!'));
 
-// Inicia tudo
+// Inicia o bot
 connectToWhatsApp();
 
 app.listen(PORT, () => {
