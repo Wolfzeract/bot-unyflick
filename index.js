@@ -1,22 +1,23 @@
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const express = require('express');
 const pino = require('pino');
+const qrcode = require('qrcode-terminal'); // Adicionado para garantir o QR
 
 const app = express();
 app.use(express.json());
 
-// Porta que o Render usa
+// O Render define a porta automaticamente, ou usa a 3000
 const PORT = process.env.PORT || 3000;
 
 let sock;
 
 async function connectToWhatsApp() {
-    // Salva a sessão na pasta 'auth_info' (Atenção: No Render Free isso reseta se o server reiniciar)
+    // Cria pasta de autenticação
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     
     sock = makeWASocket({
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: true, // O QR Code vai aparecer nos "Logs" do site da Render
+        printQRInTerminal: false, // Desativamos o nativo que estava dando erro
         auth: state
     });
 
@@ -26,7 +27,9 @@ async function connectToWhatsApp() {
         const { connection, lastDisconnect, qr } = update;
         
         if(qr) {
-            console.log("QR CODE GERADO (Veja nos Logs): ", qr);
+            // AQUI ESTÁ A CORREÇÃO: Gerar o QR manualmente
+            console.log("\n\nSCANEAR O QR CODE ABAIXO:\n");
+            qrcode.generate(qr, { small: true });
         }
 
         if (connection === 'close') {
@@ -34,12 +37,12 @@ async function connectToWhatsApp() {
             console.log('Conexão caiu. Reconectando...', shouldReconnect);
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
-            console.log('✅ BOT CONECTADO!');
+            console.log('✅ BOT CONECTADO COM SUCESSO!');
         }
     });
 }
 
-// Rota para o UnyFlick chamar
+// Rota para o UnyFlick enviar mensagem
 app.post('/enviar', async (req, res) => {
     const { numero, mensagem } = req.body;
     
@@ -48,17 +51,24 @@ app.post('/enviar', async (req, res) => {
     }
 
     try {
+        // Formata número para padrão internacional (55 + DDD + numero)
         const id = '55' + numero.replace(/\D/g, '') + '@s.whatsapp.net';
+        
+        // Envia a mensagem
         await sock.sendMessage(id, { text: mensagem });
+        
+        console.log(`Mensagem enviada para ${numero}`);
         res.json({ status: 'Enviado com sucesso' });
     } catch (e) {
-        res.status(500).json({ error: 'Erro ao enviar' });
+        console.error("Erro ao enviar:", e);
+        res.status(500).json({ error: 'Erro ao enviar mensagem' });
     }
 });
 
-// Rota para manter acordado (Ping)
-app.get('/', (req, res) => res.send('🤖 Bot UnyFlick Online'));
+// Rota de Saúde (Ping) para manter acordado
+app.get('/', (req, res) => res.send('🤖 Bot UnyFlick Online e Pronto!'));
 
+// Inicia tudo
 connectToWhatsApp();
 
 app.listen(PORT, () => {
